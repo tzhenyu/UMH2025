@@ -67,6 +67,7 @@ class _RideScreenState extends State<RideScreen> with TickerProviderStateMixin {
   late VoiceAssistantProvider _voiceProvider;
   
   // Voice Recognition Module
+  // CHANGE YOUR LOCAL IPV4 ADDRESS HERE!!
   static const String SERVER_URL = 'http://10.10.13.9:8000/transcribe/';
   static const String DENOISE_URL = 'http://10.10.13.9:8000/denoise/';
 
