@@ -108,10 +108,17 @@ class _RideScreenState extends State<RideScreen> with TickerProviderStateMixin {
   LocationData? _currentPosition;
   String _country = "Unknown";
   String _locationStatus = "Location not determined";
-
+String _pickupLocation = "Sunway Pyramid Mall, PJ";
+String _pickupDetail = "Main entrance, near Starbucks";
+String _destination = "KL Sentral, Kuala Lumpur";
+String _paymentMethod = "Cash";
+String _fareAmount = "RM 15.00";
+String _tripDistance = "3.2 km";
+String _estimatedPickupTime = "8 min";
+String _estimatedTripDuration = "18 min";
   final StreamController<String> _geminiStreamController =
       StreamController<String>.broadcast();
-
+  
   @override
   void initState() {
     super.initState();
@@ -944,6 +951,20 @@ Use the real-time device context:
 - Time: ${deviceContext['time']}  
 - Weather: ${deviceContext['weather']}  
 
+You are a smart, friendly voice assistant in a ride-hailing app. 
+The driver is currently ${_isOnline ? "ONLINE and available for rides" : "OFFLINE and not accepting ride requests"}.
+${_hasActiveRequest ? "The driver has an active ride request waiting for acceptance." : "The driver has no pending ride requests."}
+
+${_hasActiveRequest ? """
+Current ride request details:
+- Pickup: $_pickupLocation ($_pickupDetail)
+- Destination: $_destination
+- Payment method: $_paymentMethod
+- Fare amount: $_fareAmount
+- Trip distance: $_tripDistance
+- Estimated pickup time: $_estimatedPickupTime
+- Estimated trip duration: $_estimatedTripDuration
+""" : ""}
 Step 3:  
 Create a short, natural-sounding assistant message using 2–4 of the most relevant details. You may include:
 - Suggestions on where to go next
@@ -1419,7 +1440,7 @@ One friendly and helpful message that feels human and situation-aware.
                               size: 16, color: Colors.grey.shade700),
                           const SizedBox(width: 4),
                           Text(
-                            'Cash',
+                            _paymentMethod,
                             style: TextStyle(
                               color: Colors.grey.shade700,
                               fontWeight: FontWeight.w500,
@@ -1442,8 +1463,8 @@ One friendly and helpful message that feels human and situation-aware.
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text(
-                            'RM 15.00',
+                          Text(
+                            _fareAmount,
                             style: TextStyle(
                               fontSize: 24,
                               fontWeight: FontWeight.bold,
@@ -1452,7 +1473,7 @@ One friendly and helpful message that feels human and situation-aware.
                           ),
                           // Estimated time
                           Text(
-                            'Est. 18 min trip',
+                            'Est. $_tripDistance away',
                             style: TextStyle(
                               color: Colors.grey.shade600,
                               fontSize: 12,
@@ -1469,8 +1490,8 @@ One friendly and helpful message that feels human and situation-aware.
                               Icon(Icons.near_me,
                                   size: 14, color: Colors.grey.shade600),
                               const SizedBox(width: 4),
-                              const Text(
-                                '3.2 km away',
+                              Text(
+                                "$_estimatedTripDuration trip",
                                 style: TextStyle(
                                   color: AppTheme.grabGrayDark,
                                   fontWeight: FontWeight.w500,
@@ -1485,7 +1506,7 @@ One friendly and helpful message that feels human and situation-aware.
                                   size: 14, color: Colors.grey.shade600),
                               const SizedBox(width: 4),
                               Text(
-                                'ETA: 8 min',
+                                'ETA: $_estimatedPickupTime',
                                 style: TextStyle(
                                   color: Colors.grey.shade600,
                                   fontWeight: FontWeight.w500,
