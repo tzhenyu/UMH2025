@@ -96,7 +96,7 @@ class _RideScreenState extends State<RideScreen> with TickerProviderStateMixin {
   int _silenceDuration = INITIAL_SILENCE_DURATION;
   int _silenceCount = 0;
   static const double SILENCE_THRESHOLD = 3.0;
-  static const double AMPLITUDE_CHANGE_THRESHOLD = 50.0; // 50% change threshold
+  static const double AMPLITUDE_CHANGE_THRESHOLD = 80.0; // 50% change threshold
   static const double SPEECH_START_THRESHOLD = 5.0;
   static const double MIN_AMPLITUDE = -32.0;
   static const int AFTER_SPEECH_SILENCE_DURATION = 10;
@@ -929,13 +929,14 @@ void _toggleOnlineStatus() {
 Transcript A (General Model): $baseText  
 Transcript B (Local Model): $fineTunedText  
 
-You are a smart, friendly voice assistant in a ride-hailing app. 
+You are a friendly voice assistant in a ride-hailing app. 
 The driver is currently ${_isOnline ? "ONLINE and available for rides" : "OFFLINE and not accepting ride requests"}.
 ${_hasActiveRequest ? "The driver has an active ride request waiting for acceptance." : "The driver has no pending ride requests."}
 
 Step 1:  
-Briefly review both transcripts. If either contains relevant info about the driver's situation (e.g., plans, concerns, questions), use it.  
-If the transcripts are unclear, irrelevant, or not related to driving, ignore them. Prioritize Transcript B if needed.
+Briefly review both transcripts. If either contains relevant info about the driver's situation 
+(e.g., plans, concerns, questions), use it according to user's requirement. dont use all the driver information.
+Prioritize Transcript B if needed.
 
 Step 2:  
 Generate realistic driver and city data based on typical patterns and time of day:
@@ -951,11 +952,8 @@ Use the real-time device context:
 - Time: ${deviceContext['time']}  
 - Weather: ${deviceContext['weather']}  
 
-You are a smart, friendly voice assistant in a ride-hailing app. 
 The driver is currently ${_isOnline ? "ONLINE and available for rides" : "OFFLINE and not accepting ride requests"}.
 ${_hasActiveRequest ? "The driver has an active ride request waiting for acceptance." : "The driver has no pending ride requests."}
-
-${_hasActiveRequest ? """
 Current ride request details:
 - Pickup: $_pickupLocation ($_pickupDetail)
 - Destination: $_destination
@@ -966,21 +964,20 @@ Current ride request details:
 - Estimated trip duration: $_estimatedTripDuration
 """ : ""}
 Step 3:  
-Create a short, natural-sounding assistant message using 2–4 of the most relevant details. You may include:
-- Suggestions on where to go next
-- Earnings or ride count updates
-- Surge opportunities
-- Battery or break reminders
-- Weather or traffic tips
-- Motivation
+Create a short, natural-sounding assistant message using 2–4 of the most relevant details. 
+You may ask driver back if they need help with something else. such as:
+do you need rest? do you need recommendation to get more orders? and so on. 
+try to guide the driver from your recommendation
 
 Message Rules:
 - Only output step 3.
 - Speak naturally, as if voiced in-app
 - Don't repeat the same fact in different ways
+- Dont restate the transcribes.
 - Only include useful, moment-relevant info
 - Keep it under 3 sentences
-
+- Avoid using "I" or "we" in the message
+-
 Final Output:  
 One friendly and helpful message that feels human and situation-aware.
 
