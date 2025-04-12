@@ -34,7 +34,9 @@ dependencies:
   intl: ^0.18.0
   weather: ^3.0.0
   http_parser: ^4.0.0
-
+  porcupine_flutter: ^3.0.0
+  permission_handler: ^10.2.0
+  
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -49,5 +51,5 @@ flutter:
     - assets/icons/
     - assets/sounds/
     - .env
-
+    - assets/hey_grab.ppn
 
