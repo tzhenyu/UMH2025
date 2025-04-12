@@ -926,17 +926,20 @@ void _toggleOnlineStatus() {
 
         // Create Gemini prompt with dynamic device info
         final prompt = '''
+
+You are a friendly voice assistant in a ride-hailing app. 
+The driver is currently ${_isOnline ? "ONLINE and available for rides" : "OFFLINE and not accepting ride requests"}. he only drives car and does not take any other transports.
+${_hasActiveRequest ? "The driver has an active ride request waiting for acceptance." : "The driver has no pending ride requests."}
+
+The driver speaks in both ways.
 Transcript A (General Model): $baseText  
 Transcript B (Local Model): $fineTunedText  
 
-You are a friendly voice assistant in a ride-hailing app. 
-The driver is currently ${_isOnline ? "ONLINE and available for rides" : "OFFLINE and not accepting ride requests"}.
-${_hasActiveRequest ? "The driver has an active ride request waiting for acceptance." : "The driver has no pending ride requests."}
-
-Step 1:  
-Briefly review both transcripts. If either contains relevant info about the driver's situation 
+Step 1:
+Briefly review both transcripts. both transcripts are driver's question.
+If either contains relevant info about the driver's situation 
 (e.g., plans, concerns, questions), use it according to user's requirement. dont use all the driver information.
-Prioritize Transcript B if needed.
+Prioritize Transcript B.
 
 Step 2:  
 Generate realistic driver and city data based on typical patterns and time of day:
@@ -954,14 +957,7 @@ Use the real-time device context:
 
 The driver is currently ${_isOnline ? "ONLINE and available for rides" : "OFFLINE and not accepting ride requests"}.
 ${_hasActiveRequest ? "The driver has an active ride request waiting for acceptance." : "The driver has no pending ride requests."}
-Current ride request details:
-- Pickup: $_pickupLocation ($_pickupDetail)
-- Destination: $_destination
-- Payment method: $_paymentMethod
-- Fare amount: $_fareAmount
-- Trip distance: $_tripDistance
-- Estimated pickup time: $_estimatedPickupTime
-- Estimated trip duration: $_estimatedTripDuration
+
 """ : ""}
 Step 3:  
 Create a short, natural-sounding assistant message using 2–4 of the most relevant details. 
@@ -977,10 +973,8 @@ Message Rules:
 - Only include useful, moment-relevant info
 - Keep it under 3 sentences
 - Avoid using "I" or "we" in the message
--
-Final Output:  
-One friendly and helpful message that feels human and situation-aware.
 
+DO NOT skip the question.DO NOT skip the question.DO NOT skip the question.
 
             ''';
 

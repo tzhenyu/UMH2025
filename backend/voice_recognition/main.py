@@ -252,7 +252,7 @@ async def initialize_models():
     global base_model
     try:
         base_model = whisper.load_model(
-            "base", 
+            "tiny", 
             device="cpu",  # Always use CPU
             download_root=str(PROJECT_ROOT / "models" / "whisper")
         )
