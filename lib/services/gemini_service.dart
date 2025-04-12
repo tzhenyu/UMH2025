@@ -7,7 +7,7 @@ class GeminiService {
 
   GeminiService() {
     _model = GenerativeModel(
-      model: 'gemini-1.5-pro',
+      model: 'gemini-2.0-flash-lite',
       apiKey: ApiKeys.geminiApiKey,
       generationConfig: GenerationConfig(
         temperature: 0.7,
@@ -20,7 +20,7 @@ class GeminiService {
 
   /// Starts a new chat session
   Future<void> startNewChat() async {
-    _chat = _model.startChat(
+    _chat = _model.startChat( 
       history: [
         Content.text("You are an AI driving assistant for a ride-hailing app. "
             "Help the driver with their tasks, answer questions, and provide useful information. "

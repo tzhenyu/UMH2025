@@ -24,6 +24,7 @@ import '../services/wake_word.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'dart:typed_data';
 import 'package:flutter_tts/flutter_tts.dart';
+import 'dart:math';
 
 class RideScreen extends StatefulWidget {
   const RideScreen({super.key});
@@ -553,25 +554,27 @@ class _RideScreenState extends State<RideScreen> with TickerProviderStateMixin {
       });
     }
   }
-
-  void _toggleOnlineStatus() {
-    // Always update the online state immediately for smooth toggle animation
-    setState(() {
-      _isOnline = !_isOnline;
-
-      if (_isOnline) {
-        // Going online - show request card with animation
-        _showNewRequest();
-      } else {
-        // Going offline - but keep request card visible for animation
-        if (_hasActiveRequest) {
-          // Keep _hasActiveRequest true until animation completes
-          _dismissRequest();
-          _requestTimer?.cancel();
-        }
+void _toggleOnlineStatus() {
+  // Always update the online state immediately for smooth toggle animation
+  setState(() {
+    _isOnline = !_isOnline;
+    
+    // AI STATUS INDICATOR - This comment helps the AI know the driver's status
+    // Driver is currently: ${_isOnline ? "ONLINE" : "OFFLINE"}
+    
+    if (_isOnline) {
+      // Going online - show request card with animation
+      _showNewRequest();
+    } else {
+      // Going offline - but keep request card visible for animation
+      if (_hasActiveRequest) {
+        // Keep _hasActiveRequest true until animation completes
+        _dismissRequest();
+        _requestTimer?.cancel();
       }
-    });
-  }
+    }
+  });
+}
 
   Future<void> _initializeLocation() async {
     await _getCurrentLocation();
@@ -916,52 +919,51 @@ class _RideScreenState extends State<RideScreen> with TickerProviderStateMixin {
 
         // Create Gemini prompt with dynamic device info
         final prompt = '''
-            Transcript A (General Model): $baseText
-            Transcript B (Local Model): $fineTunedText
+Transcript A (General Model): $baseText  
+Transcript B (Local Model): $fineTunedText  
 
-            You are an AI driving assistant in a ride-hailing app. The driver is currently idle and not on any active ride. 
-            Based on real-time data and typical driver behavior, respond like a friendly and efficient voice assistant who helps the 
-            driver stay productive, make money, or manage time wisely.
+You are a smart, friendly voice assistant in a ride-hailing app. 
+The driver is currently ${_isOnline ? "ONLINE and available for rides" : "OFFLINE and not accepting ride requests"}.
+${_hasActiveRequest ? "The driver has an active ride request waiting for acceptance." : "The driver has no pending ride requests."}
 
-            Here is the current driver context:
+Step 1:  
+Briefly review both transcripts. If either contains relevant info about the driver's situation (e.g., plans, concerns, questions), use it.  
+If the transcripts are unclear, irrelevant, or not related to driving, ignore them. Prioritize Transcript B if needed.
 
-                Driver is online but has no active ride.
+Step 2:  
+Generate realistic driver and city data based on typical patterns and time of day:
+- Total rides completed today (e.g., 3–10)
+- Total earnings today (e.g., RM40–RM200)
+- 3 nearby areas with random demand levels: High / Medium / Low
+- Optional surge zone (1 area only, with 1.2x–1.8x multiplier)
 
-                Location: ${_country}
+Use the real-time device context:
+- Location: ${_country}  
+- Battery: ${deviceContext['battery']}  
+- Network: ${deviceContext['network']}  
+- Time: ${deviceContext['time']}  
+- Weather: ${deviceContext['weather']}  
 
-                Battery: ${deviceContext['battery']}
+Step 3:  
+Create a short, natural-sounding assistant message using 2–4 of the most relevant details. You may include:
+- Suggestions on where to go next
+- Earnings or ride count updates
+- Surge opportunities
+- Battery or break reminders
+- Weather or traffic tips
+- Motivation
 
-                Network: ${deviceContext['network']}
+Message Rules:
+- Only output step 3.
+- Speak naturally, as if voiced in-app
+- Don't repeat the same fact in different ways
+- Only include useful, moment-relevant info
+- Keep it under 3 sentences
 
-                Today's earnings: RM82.50
+Final Output:  
+One friendly and helpful message that feels human and situation-aware.
 
-                Rides completed: 5
 
-                Bonus goal: Complete 8 rides for RM30 bonus
-
-                Nearby demand areas: KLCC (High), Bukit Bintang (Medium), Mid Valley (Low)
-
-                Surge zones: KLCC (1.5x)
-
-                Time: ${deviceContext['time']}
-
-                Weather: ${deviceContext['weather']}
-
-                No current support issues
-
-            Give the driver helpful suggestions such as:
-
-                Where to go to get more rides
-
-                How close they are to bonus goals
-
-                When to take a break
-
-                Market outlook (traffic, demand spikes, weather)
-
-                Motivational or actionable advice
-
-            Speak in a short, natural, assistant-style tone.
             ''';
 
         print(prompt);
@@ -2230,32 +2232,85 @@ class _RideScreenState extends State<RideScreen> with TickerProviderStateMixin {
 class DeviceInfoService {
   final Battery _battery = Battery();
   final Connectivity _connectivity = Connectivity();
+  
+  // Mock weather data - replace with actual API call in production
+  Map<String, String> _weatherCache = {};
+  final List<String> _weatherConditions = [
+    'Sunny', 'Partly cloudy', 'Cloudy', 'Light rain', 'Raining', 'Thunderstorms'
+  ];
+  final List<String> _temperatures = ['28°C', '29°C', '30°C', '31°C', '32°C', '27°C'];
+Future<Map<String, dynamic>> getDeviceContext() async {
+  // Get battery level
+  final batteryLevel = await _battery.batteryLevel;
+  
+  // Get battery charging state
+  final batteryState = await _battery.batteryState;
+  final isCharging = batteryState == BatteryState.charging || 
+                     batteryState == BatteryState.full;
+  
+  // Get network status
+  final connectivityResult = await _connectivity.checkConnectivity();
+  final networkStatus = _getNetworkStrength(connectivityResult);
 
-  Future<Map<String, dynamic>> getDeviceContext() async {
-    // Get battery level
-    final batteryLevel = await _battery.batteryLevel;
+  // Get current time
+  final now = DateTime.now();
+  final timeStr = DateFormat('h:mm a').format(now);
 
-    // Get network status
-    final connectivityResult = await _connectivity.checkConnectivity();
-    final networkStatus = _getNetworkStrength(connectivityResult);
+  // Get traffic condition based on time
+  final trafficCondition = _getTrafficCondition(now);
+  
+  // Get weather data
+  final weather = await _getWeatherData();
 
-    // Get current time
+  return {
+    'battery': '$batteryLevel%${isCharging ? " (Charging)" : ""}',
+    'network': networkStatus,
+    'time': '$timeStr, $trafficCondition traffic',
+    'weather': weather,
+  };
+}
+
+  Future<String> _getWeatherData() async {
+    // In a real app, you would call a weather API here
+    // For now, we'll use mock data that changes based on time of day
+    
+    // Check if we have cached weather within the last hour
     final now = DateTime.now();
-    final timeStr = DateFormat('h:mm a').format(now);
-
-    // Get traffic condition based on time
-    final trafficCondition = _getTrafficCondition(now);
-
-    return {
-      'battery': '$batteryLevel%',
-      'network': networkStatus,
-      'time': '$timeStr, $trafficCondition traffic',
-      'weather':
-          'Fetching weather data...', // Placeholder until weather API is implemented
-    };
+    final dateKey = '${now.year}-${now.month}-${now.day}-${now.hour}';
+    
+    if (_weatherCache.containsKey(dateKey)) {
+      return _weatherCache[dateKey]!;
+    }
+    
+    // Generate weather based on time of day
+    final random = Random();
+    int index;
+    
+    if (now.hour >= 6 && now.hour < 11) {
+      // Morning - more likely to be clear
+      index = random.nextInt(3); // First 3 conditions
+    } else if (now.hour >= 11 && now.hour < 15) {
+      // Midday - could be anything
+      index = random.nextInt(_weatherConditions.length);
+    } else if (now.hour >= 15 && now.hour < 19) {
+      // Afternoon - more likely to rain
+      index = 2 + random.nextInt(4); // Last 4 conditions
+    } else {
+      // Evening/night
+      index = random.nextInt(_weatherConditions.length);
+    }
+    
+    final tempIndex = random.nextInt(_temperatures.length);
+    final weather = "${_weatherConditions[index]}, ${_temperatures[tempIndex]}";
+    
+    // Cache the result
+    _weatherCache[dateKey] = weather;
+    
+    return weather;
   }
 
   String _getNetworkStrength(ConnectivityResult result) {
+    // Existing method implementation
     switch (result) {
       case ConnectivityResult.mobile:
         return 'Strong (4G)';
@@ -2269,6 +2324,7 @@ class DeviceInfoService {
   }
 
   String _getTrafficCondition(DateTime time) {
+    // Existing method implementation
     final hour = time.hour;
     if ((hour >= 7 && hour <= 9) || (hour >= 17 && hour <= 19)) {
       return 'heavy';
