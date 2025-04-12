@@ -20,6 +20,7 @@ import 'package:battery_plus/battery_plus.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:intl/intl.dart';
 import '../services/gemini_service.dart';
+import 'dart:math';
 
 class RideScreen extends StatefulWidget {
   const RideScreen({super.key});
@@ -407,6 +408,10 @@ class _RideScreenState extends State<RideScreen> with TickerProviderStateMixin {
     try {
       print('\n=== Starting Recording Process ===');
       
+      // Cancel any existing timers first
+      _amplitudeTimer?.cancel();
+      _amplitudeTimer = null;
+      
       if (!await _recorder.hasPermission()) {
         throw Exception('Microphone permission denied');
       }
@@ -414,45 +419,48 @@ class _RideScreenState extends State<RideScreen> with TickerProviderStateMixin {
       final path = await _getTempFilePath();
       print('Recording path: $path');
 
-      // Updated recording configuration for RNNoise compatibility
+      // Start recording with optimized settings
       await _recorder.start(
         const RecordConfig(
-          encoder: AudioEncoder.wav,        // Changed to WAV format
-          bitRate: 768000,                  // 16-bit * 48000 Hz * 1 channel
-          sampleRate: 48000,               
-          numChannels: 2,                   // Mono audio
+          encoder: AudioEncoder.wav,
+          bitRate: 768000,
+          sampleRate: 48000,
+          numChannels: 2,
         ),
         path: path,
       );
 
       print('Recording started in mono WAV mode');
+      
+      // Set recording state variables
       setState(() {
         _isRecording = true;
         _hasDetectedSpeech = false;
         _silenceCount = 0;
         _silenceDuration = INITIAL_SILENCE_DURATION;
-        _lastAmplitude = -30.0;            // Start with realistic ambient level
+        _lastAmplitude = -30.0;
         _currentAmplitude = -30.0;
       });
 
+      print("Starting amplitude monitoring...");
       _startAmplitudeMonitoring();
-
-    } catch (e) {
-      print('Error in _startRecording: $e');
-      setState(() {
-        _isRecording = false;
-        _transcription = "Error: Failed to start recording";
-      });
-    }
+        } catch (e) {
+        print('Error in _startRecording: $e');
+        setState(() {
+          _isRecording = false;
+          _transcription = "Error: Failed to start recording";
+        });
+        rethrow; // Important to propagate the error
+      }
   }
-
   void _startAmplitudeMonitoring() {
+    // Ensure we don't have multiple timers
     _amplitudeTimer?.cancel();
-    _silenceDuration = PRE_SPEECH_SILENCE_COUNT;
-    int readingsToSkip = 2;  // Skip first two readings
     
+    int readingsToSkip = 2;
     _amplitudeTimer = Timer.periodic(const Duration(milliseconds: 100), (timer) async {
       if (!_isRecording) {
+        print("Recording stopped, cancelling amplitude timer");
         timer.cancel();
         return;
       }
@@ -467,7 +475,9 @@ class _RideScreenState extends State<RideScreen> with TickerProviderStateMixin {
           return;
         }
         
-        _currentAmplitude = newAmplitude;
+        setState(() {
+          _currentAmplitude = newAmplitude;
+        });
         
         // Handle initial readings
         if (readingsToSkip > 0) {
@@ -478,21 +488,19 @@ class _RideScreenState extends State<RideScreen> with TickerProviderStateMixin {
           return;
         }
 
-        // Rest of your amplitude monitoring code...
+        // Amplitude analysis
         double percentageChange = 0.0;
         if (_lastAmplitude.abs() > 0.001 && !_lastAmplitude.isInfinite) {
           percentageChange = ((_currentAmplitude - _lastAmplitude) / _lastAmplitude.abs()) * 100;
-          // Clamp percentage change to reasonable values
           percentageChange = percentageChange.clamp(-1000.0, 1000.0);
           
-          // Debug logging only for valid readings
           print('\n=== 🎙️ Amplitude Analysis ===');
           print('Previous: ${_lastAmplitude.toStringAsFixed(2)} dB');
           print('Current:  ${_currentAmplitude.toStringAsFixed(2)} dB');
           print('Change:   ${percentageChange.toStringAsFixed(2)}%');
           print('Silence:  $_silenceCount/$_silenceDuration');
 
-          // Speech detection logic only for valid amplitudes
+          // Speech detection
           if (percentageChange.abs() > AMPLITUDE_CHANGE_THRESHOLD) {
             if (!_hasDetectedSpeech) {
               print('Speech detected - Amplitude change: ${percentageChange.toStringAsFixed(2)}%');
@@ -509,7 +517,7 @@ class _RideScreenState extends State<RideScreen> with TickerProviderStateMixin {
             if (_silenceCount >= _silenceDuration) {
               print('Recording stopped - Silence duration reached');
               timer.cancel();
-              await _stopAndSendRecording();
+              _stopAndSendRecording();
             }
           } else {
             _silenceCount = 0;
@@ -517,13 +525,13 @@ class _RideScreenState extends State<RideScreen> with TickerProviderStateMixin {
           
           _lastAmplitude = _currentAmplitude;
         }
-
       } catch (e) {
-        print('❌ Error: $e');
+        print('❌ Error in amplitude monitoring: $e');
       }
     });
+    
+    print("Amplitude monitoring started");
   }
-
   Future<void> _stopAndSendRecording() async {
   try {
     print('\n=== Stopping Recording ===');
@@ -619,20 +627,20 @@ class _RideScreenState extends State<RideScreen> with TickerProviderStateMixin {
       }
 
       final request = http.MultipartRequest('POST', Uri.parse(DENOISE_URL));
-      
+      // Second addition with same 'file' name
+      final audioFile = await http.MultipartFile.fromPath(
+        'file',
+        file.path,
+        contentType: MediaType('application', 'octet-stream'),
+      );
+      request.files.add(audioFile);
+
       // Add error tracking headers
       request.headers.addAll({
         'X-Retry-Count': retryCount.toString(),
         'X-Client-Version': '1.0.0',
         'X-File-Size': fileSize.toString(),
       });
-
-      final audioFile = await http.MultipartFile.fromPath(
-        'file',
-        file.path,
-        contentType: MediaType('audio', 'wav'),
-      );
-      request.files.add(audioFile);
 
       print('Sending to denoising API...');
       print('- File size: ${audioFile.length} bytes');
@@ -643,10 +651,6 @@ class _RideScreenState extends State<RideScreen> with TickerProviderStateMixin {
         const Duration(seconds: 30),
         onTimeout: () => throw TimeoutException('Denoising request timed out'),
       );
-
-      print('Response received:');
-      print('- Status code: ${response.statusCode}');
-      print('- Headers: ${response.headers}');
 
       if (response.statusCode == 200) {
         final denoisedAudio = await response.stream.toBytes();
@@ -681,6 +685,11 @@ class _RideScreenState extends State<RideScreen> with TickerProviderStateMixin {
 }
 
   Future<void> _transcribeAudio(List<int> audioData) async {
+    setState(() {
+      _isProcessing = true;
+      _transcription = "Processing audio...";
+    });
+
     try {
         print('Preparing transcription request...');
         final request = http.MultipartRequest('POST', Uri.parse(SERVER_URL));
@@ -732,9 +741,7 @@ class _RideScreenState extends State<RideScreen> with TickerProviderStateMixin {
 
                 Driver is online but has no active ride.
 
-                Location: ${_currentPosition != null ? 
-                    '${_currentPosition!.latitude}, ${_currentPosition!.longitude}' : 
-                    'Location unavailable'}
+                Location: ${_country}
 
                 Battery: ${deviceContext['battery']}
 
@@ -771,8 +778,6 @@ class _RideScreenState extends State<RideScreen> with TickerProviderStateMixin {
             Speak in a short, natural, assistant-style tone.
             ''';
 
-            print('\n======= GEMINI API INTERACTION =======');
-            print('Sending prompt to Gemini:');
             print(prompt);
             print('\nWaiting for Gemini response...');
 
@@ -781,16 +786,13 @@ class _RideScreenState extends State<RideScreen> with TickerProviderStateMixin {
             print('\nGemini Response:');
             print('----------------------------------------');
             print(geminiResponse);
-            print('----------------------------------------');
-            print('Response length: ${geminiResponse.length} characters');
-            print('=======================================\n');
             
             setState(() {
               _baseTranscription = baseText;
               _fineTunedTranscription = fineTunedText;
               _geminiResponse = geminiResponse;
               _geminiStreamController.add(geminiResponse);
-              _isProcessing = false;
+              _isProcessing = false; // Important to set this to false!
             });
 
         } else {
@@ -825,7 +827,7 @@ class _RideScreenState extends State<RideScreen> with TickerProviderStateMixin {
       }
     }
   }
-
+  
   Future<void> _getCurrentLocation() async {
     await _handleLocationPermission();
 
@@ -834,7 +836,7 @@ class _RideScreenState extends State<RideScreen> with TickerProviderStateMixin {
 
       List<geocoding.Placemark> placemarks = await geocoding.placemarkFromCoordinates(
         locationData.latitude!,
-        locationData.longitude!
+        locationData.longitude!,
       );
 
       if (placemarks.isNotEmpty) {
@@ -848,47 +850,56 @@ class _RideScreenState extends State<RideScreen> with TickerProviderStateMixin {
           'Indonesia': 'Indonesia',
         };
 
-        // ...rest of the code remains the same
+        setState(() {
+          _country = countryMapping[rawCountry] ?? "Unknown";
+          _locationStatus = "Location determined";
+        });
       }
     } catch (e) {
       setState(() => _locationStatus = 'Error getting location: $e');
     }
   }
 
-  Future<void> abortRecord() async {
-    try {
-      print('\n=== Aborting Recording ===');
+Future<void> abortRecord() async {
+  try {
+    print('\n=== Aborting Recording ===');
+    
+    // Cancel the amplitude timer to prevent memory leaks
+    _amplitudeTimer?.cancel();
+    _amplitudeTimer = null;
 
-      // Stop the recording
+    // Stop the recording ONLY ONCE (remove the redundant code)
+    if (_isRecording) {
       final path = await _recorder.stop();
-      setState(() => _isRecording = false);
-
-      if (path == null) {
-        print('No recording file to delete.');
-        return;
-      }
-
+      
       // Delete the recorded file
-      final file = File(path);
-      if (await file.exists()) {
-        await file.delete();
-        print('Recording file deleted: $path');
-      } else {
-        print('Recording file not found: $path');
+      if (path != null) {
+        final file = File(path);
+        if (await file.exists()) {
+          await file.delete();
+          print('Recording file deleted: $path');
+        }
       }
-
-      // Reset transcription and Gemini response
-      setState(() {
-        _transcription = "Recording aborted.";
-        _geminiResponse = "";
-      });
-    } catch (e) {
-      print('Error in abortRecord: $e');
-      setState(() {
-        _transcription = "Error: Failed to abort recording.";
-      });
     }
+    
+    // Reset all states
+    setState(() {
+      _isRecording = false;
+      _isProcessing = false;
+      _hasDetectedSpeech = false;
+      _silenceCount = 0;
+      _transcription = "Recording aborted.";
+      _geminiResponse = "";
+    });
+  } catch (e) {
+    print('Error in abortRecord: $e');
+    setState(() {
+      _isRecording = false;
+      _isProcessing = false;
+      _transcription = "Error: Failed to abort recording.";
+    });
   }
+}
 
   Widget _buildOnlineToggle() {
     return Positioned(
@@ -1721,136 +1732,198 @@ class _RideScreenState extends State<RideScreen> with TickerProviderStateMixin {
   
   // MIC BUTTON
   Widget _buildDraggableVoiceButton() {
-    return Positioned(
-      left: _voiceButtonPosition.dx,
-      top: _voiceButtonPosition.dy,
-      child: GestureDetector(
-        onPanUpdate: (details) {
-          setState(() {
-            _voiceButtonPosition = Offset(
-              _voiceButtonPosition.dx + details.delta.dx,
-              _voiceButtonPosition.dy + details.delta.dy,
-            );
-          });
-        },
-        onPanEnd: (details) {
-          _snapVoiceButtonToEdge();
-        },
-        child: Container(
-          width: 64,
-          height: 64,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: Colors.white,
-            boxShadow: [
-              BoxShadow(
-                color: AppTheme.grabGreen.withOpacity(0.2),
-                blurRadius: 8,
-                offset: const Offset(0, 2),
-              ),
-            ],
-          ),
-          child: Material(
-            color: Colors.transparent,
-            child: InkWell(
-            onTap: () {
-              _startRecording();
-              _isRecording = true;
+  return Positioned(
+    left: _voiceButtonPosition.dx,
+    top: _voiceButtonPosition.dy,
+    child: GestureDetector(
+      onPanUpdate: (details) {
+        setState(() {
+          _voiceButtonPosition = Offset(
+            _voiceButtonPosition.dx + details.delta.dx,
+            _voiceButtonPosition.dy + details.delta.dy,
+          );
+        });
+      },
+      onPanEnd: (details) {
+        _snapVoiceButtonToEdge();
+      },
+      child: Container(
+        width: 64,
+        height: 64,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: Colors.white,
+          boxShadow: [
+            BoxShadow(
+              color: AppTheme.grabGreen.withOpacity(0.2),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: () async {
+              // Reset states first
+              _amplitudeTimer?.cancel();
+              try {
+                if (_isRecording) {
+                  await _recorder.stop();
+                }
+              } catch (e) {
+                print("No active recording to stop: $e");
+              }
+              
+              // Important: set _isRecording BEFORE showing modal
+              setState(() {
+                _isRecording = true;
+                _isProcessing = false;
+                _hasDetectedSpeech = false;
+                _silenceCount = 0;
+                _silenceDuration = INITIAL_SILENCE_DURATION;
+                _lastAmplitude = -30.0;
+                _currentAmplitude = -30.0;
+                _geminiResponse = ""; // Clear previous responses
+              });
+                          
+              try {
+                await _startRecording();
+                print("Recording started, amplitude monitoring should begin");
+              } catch (e) {
+                print("Error starting recording: $e");
+                setState(() {
+                  _isRecording = false;
+                });
+              }
+              // Show modal bottom sheet with a completely different approach
               showModalBottomSheet(
                 context: context,
                 backgroundColor: Colors.transparent,
                 isDismissible: true,
-                enableDrag: false,
-                builder: (context) {
-                  return StatefulBuilder(
-                    builder: (context, setModalState) {
-                      return StreamBuilder<String>(
-                        stream: _geminiStreamController.stream,
-                        initialData: _geminiResponse,
-                        builder: (context, snapshot) {
-                          return Container(
-                            width: double.infinity,
-                            height: 300,
-                            decoration: const BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.vertical(
-                                top: Radius.circular(20),
-                              ),
-                            ),
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                if (_isRecording) ...[
-                                  const Icon(
-                                    Icons.mic,
-                                    color: AppTheme.grabGreen,
-                                    size: 48,
-                                  ),
-                                  const SizedBox(height: 16),
-                                  const Text(
-                                    "Listening...",
-                                    style: TextStyle(
-                                      fontSize: 18,
-                                      fontWeight: FontWeight.w500,
-                                      color: Colors.grey,
-                                    ),
-                                  ),
-                                ] else if (_isProcessing) ...[
-                                  // Use setModalState here to update the UI
-                                  const CircularProgressIndicator(
-                                    valueColor: AlwaysStoppedAnimation<Color>(AppTheme.grabGreen),
-                                  ),
-                                  const SizedBox(height: 12),
-                                  const Text(
-                                    "Processing...",
-                                    style: TextStyle(
-                                      fontSize: 18,
-                                      fontWeight: FontWeight.w500,
-                                      color: Colors.grey,
-                                    ),
-                                  ),
-                                ] else if (snapshot.hasData && snapshot.data!.isNotEmpty) ...[
-                                  Expanded(
-                                    child: SingleChildScrollView(
-                                      padding: const EdgeInsets.all(23),
-                                      child: Text(
-                                        snapshot.data!,
-                                        style: const TextStyle(
-                                          fontSize: 16,
-                                          color: Colors.grey,
-                                          height: 1.5,
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ],
-                            ),
-                          );
-                        },
-                      );
-                    },
-                  );
+                enableDrag: true,
+                builder: (BuildContext context) {
+                  return _buildVoiceModal(context);
                 },
               ).whenComplete(() {
+                print("Modal dismissed - calling abortRecord()");
                 abortRecord();
               });
             },
-              customBorder: const CircleBorder(),
-              child: const Center(
-                child: Icon(
-                  Icons.mic,
-                  color: AppTheme.grabGreen,
-                  size: 28,
-                ),
+            customBorder: const CircleBorder(),
+            child: const Center(
+              child: Icon(
+                Icons.mic,
+                color: AppTheme.grabGreen,
+                size: 28,
               ),
             ),
           ),
         ),
       ),
-    );
-  }
-  
+    ),
+  );
+}
+
+// Extract the modal into a separate method
+Widget _buildVoiceModal(BuildContext context) {
+  return StatefulBuilder(
+    builder: (BuildContext context, StateSetter modalSetState) {
+      // This function will refresh the modal with current state
+      void updateModalState() {
+        modalSetState(() {});
+      }
+      
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        Future.delayed(Duration(milliseconds: 200), () {
+          if (context.mounted) updateModalState();
+        });
+      });
+      
+      return StreamBuilder<String>(
+        stream: _geminiStreamController.stream,
+        initialData: _geminiResponse,
+        builder: (context, snapshot) {
+          print("MODAL STATE CHECK: isRecording=$_isRecording, isProcessing=$_isProcessing");
+          
+          return Container(
+            width: double.infinity,
+            height: 300,
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.vertical(
+                top: Radius.circular(20),
+              ),
+            ),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                if (_isRecording) 
+                  Column(
+                    children: const [
+                      Icon(
+                        Icons.mic,
+                        color: AppTheme.grabGreen,
+                        size: 48,
+                      ),
+                      SizedBox(height: 16),
+                      Text(
+                        "Listening...",
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w500,
+                          color: Colors.grey,
+                        ),
+                      ),
+                    ],
+                  )
+                else if (_isProcessing) 
+                  Column(
+                    children: const [
+                      CircularProgressIndicator(
+                        valueColor: AlwaysStoppedAnimation<Color>(AppTheme.grabGreen),
+                      ),
+                      SizedBox(height: 12),
+                      Text(
+                        "Processing...",
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w500,
+                          color: Colors.grey,
+                        ),
+                      ),
+                    ],
+                  )
+                else if (snapshot.hasData && snapshot.data!.isNotEmpty) 
+                  Expanded(
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.all(23),
+                      child: Text(
+                        snapshot.data!,
+                        style: const TextStyle(
+                          fontSize: 16,
+                          color: Colors.grey,
+                          height: 1.5,
+                        ),
+                      ),
+                    ),
+                  )
+                else 
+                  const Text(
+                    "No data available",
+                    style: TextStyle(
+                      fontSize: 16,
+                      color: Colors.grey,
+                    ),
+                  ),
+              ],
+            ),
+          );
+        },
+      );
+    },
+  );
+}
   // Set up voice command handler
   void _setupVoiceCommandHandler() {
     _voiceProvider.setCommandCallback((command) {
