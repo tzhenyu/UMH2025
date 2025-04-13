@@ -692,18 +692,16 @@ void _toggleOnlineStatus() {
           print('Change:   ${percentageChange.toStringAsFixed(2)}%');
           print('Silence:  $_silenceCount/$_silenceDuration');
 
-          // Speech detection
-          if (percentageChange.abs() > AMPLITUDE_CHANGE_THRESHOLD) {
-            if (!_hasDetectedSpeech) {
-              print(
-                  'Speech detected - Amplitude change: ${percentageChange.toStringAsFixed(2)}%');
-              setState(() {
-                _hasDetectedSpeech = true;
-                _silenceDuration = POST_SPEECH_SILENCE_COUNT;
-              });
-            }
-            _silenceCount = 0;
-          }
+if (percentageChange.abs() > AMPLITUDE_CHANGE_THRESHOLD) {
+  if (!_hasDetectedSpeech) {
+    print('Speech detected - Amplitude change: ${percentageChange.toStringAsFixed(2)}%');
+    setState(() {
+      _hasDetectedSpeech = true;
+      _silenceDuration = POST_SPEECH_SILENCE_COUNT;
+    });
+  }
+  _silenceCount = 0;
+}
           // Silence detection
           else if (_currentAmplitude < SILENCE_THRESHOLD) {
             _silenceCount++;
@@ -926,55 +924,53 @@ void _toggleOnlineStatus() {
 
         // Create Gemini prompt with dynamic device info
         final prompt = '''
+You are a driver assistant for a ride-hailing app. 
 
-You are a friendly voice assistant in a ride-hailing app. 
-The driver is currently ${_isOnline ? "ONLINE and available for rides" : "OFFLINE and not accepting ride requests"}. he only drives car and does not take any other transports.
-${_hasActiveRequest ? "The driver has an active ride request waiting for acceptance." : "The driver has no pending ride requests."}
+Ride-hailing works by allowing drivers to register on a platform, go online via an app, 
+and receive ride requests from nearby passengers. After accepting a request, the driver navigates to the pickup location, 
+transports the passenger to their destination, and completes the trip through the app. Fares are calculated based on
+distance and time, with earnings paid in cash or digitally after deducting the platform’s commission. Drivers and passengers 
+rate each other, and bonuses may be offered for completing multiple trips or driving during peak hours.
 
+You are given two transcripts of the driver's speech.
 The driver speaks in both ways.
 Transcript A (General Model): $baseText  
 Transcript B (Local Model): $fineTunedText  
 
-Step 1:
-Briefly review both transcripts. both transcripts are driver's question.
-If either contains relevant info about the driver's situation 
-(e.g., plans, concerns, questions), use it according to user's requirement. dont use all the driver information.
-Prioritize Transcript B.
-
-Step 2:  
-Generate realistic driver and city data based on typical patterns and time of day:
-- Total rides completed today (e.g., 3–10)
-- Total earnings today (e.g., RM40–RM200)
-- 3 nearby areas with random demand levels: High / Medium / Low
-- Optional surge zone (1 area only, with 1.2x–1.8x multiplier)
-
 Use the real-time device context:
+The driver is currently ${_isOnline ? "ONLINE and available for rides" : "OFFLINE and not accepting ride requests"}.
+${_hasActiveRequest ? "The driver has an active ride request waiting for acceptance." : "The driver has no pending ride requests."}
+""" : ""}
 - Location: ${_country}  
 - Battery: ${deviceContext['battery']}  
 - Network: ${deviceContext['network']}  
 - Time: ${deviceContext['time']}  
 - Weather: ${deviceContext['weather']}  
 
-The driver is currently ${_isOnline ? "ONLINE and available for rides" : "OFFLINE and not accepting ride requests"}.
-${_hasActiveRequest ? "The driver has an active ride request waiting for acceptance." : "The driver has no pending ride requests."}
+Also, Generate realistic driver and city data based on typical patterns and time of day:
+- Total rides completed today (e.g., 3–10)
+- Total earnings today (e.g., RM40–RM200)
+- 3 nearby areas with random demand levels: High / Medium / Low
+- Optional surge zone (1 area only, with 1.2x–1.8x multiplier)
+- Anything else that is related to ride-hailing.
 
-""" : ""}
-Step 3:  
-Create a short, natural-sounding assistant message using 2–4 of the most relevant details. 
+Briefly review both transcripts and identify the most relevant information.
+
+If either contains relevant info about the driver's situation 
+(e.g., plans, concerns, questions), use it according to user's requirement. dont use all the driver information.
+Prioritize Transcript B.
+
+Please analyze What's the driver asking in ride-hailing naswer without saying it out.
+Based from the question above, Create a short, natural-sounding assistant message using 2–4 of the most relevant details. 
+Do not exaplin how you think. just the answer.
+
 You may ask driver back if they need help with something else. such as:
-do you need rest? do you need recommendation to get more orders? and so on. 
-try to guide the driver from your recommendation
+do you need rest? do you need recommendation to get more orders? or anything else that is related.
+try to guide the driver from your recommendation.
 
-Message Rules:
-- Only output step 3.
-- Speak naturally, as if voiced in-app
-- Don't repeat the same fact in different ways
-- Dont restate the transcribes.
-- Only include useful, moment-relevant info
-- Keep it under 3 sentences
-- Avoid using "I" or "we" in the message
 
-DO NOT skip the question.DO NOT skip the question.DO NOT skip the question.
+
+
 
             ''';
 
